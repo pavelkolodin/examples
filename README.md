@@ -1,5 +1,5 @@
 Examples of using fir
-* httpserver -- tiny HTTP server displaying your User-Agent
+* httpserver - tiny HTTP server displaying your User-Agent using Fir's HTML templater
 
 ####Checkout
 ```
@@ -22,6 +22,6 @@ make -j4
 ```
 ./httpserver 127.0.0.1 44333 ../httpserver
 ```
-(*../httpserver* is a directory where *index.html* is placed)
+(the last argument points to a directory where **index.html** template is placed)<br>
 Open [http://127.0.0.1:44333/](http://127.0.0.1:44333/) in browser.
 
