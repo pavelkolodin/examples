@@ -6,25 +6,30 @@
  */
 
 #include <fir/structures/flat_buff.h>
-#include <fir/net/connection_http.h>
-#include <fir/net/connection_bin.h>
+#include <fir/net/responder_base.h>
 
 template <typename T_RESOURCES>
-class Responder {
-
-	T_RESOURCES *resources_;
+class Responder : public fir::net::ResponderBase<T_RESOURCES, Responder<T_RESOURCES> >
+{
+	typedef fir::net::ResponderBase<T_RESOURCES, Responder<T_RESOURCES> > base_class;
 	fir::structures::FlatBuff *flatbuff_;
+
+	enum class State {
+		START,
+		WAITING
+	};
+	State state_ = State::START;
 
 public:
 	Responder(T_RESOURCES *_r)
-	: resources_(_r)
+	: base_class(_r)
 	{
 		// flatbuff is auto-resizable flat buffer of bytes
-		flatbuff_ = resources_->getFlatBuff();
+		flatbuff_ = base_class::resources_->getFlatBuff();
 	}
 
 	~Responder() {
-		resources_->freeFlatBuff(flatbuff_);
+		base_class::resources_->freeFlatBuff(flatbuff_);
 	}
 
 	// Called before new request.
@@ -32,25 +37,27 @@ public:
 		std::cout << "CLEAR Responder\n";
 	}
 
-	// Called by ConnectionHTTP every time server is ready to send HTTP response to user.
-	// "server is ready to send" may happen in following cases:
-	// 1. New HTTP request got from client.
-	// 2. New data received by another connection created by this Responder during previous call of this method.
-	//
-	// RETURN:
-	void data(fir::net::ConnectionHTTP<T_RESOURCES, Responder> &_conn)
+	void dataHTTP(fir::net::ConnectionHTTP<T_RESOURCES, Responder> &_conn)
 	{
 		auto &headers = _conn.request().headers();
 
-		std::cout << "HTTP request, host " << headers.m_host << ", uri " << headers.m_uri << "\n";
+		std::cout << "HTTP data ("<< _conn.m_id <<"), host " << headers.m_host << ", uri " << headers.m_uri << ", conn " << (void*)&_conn << "\n";
 
-
+		if (headers.m_uri.startwith(BUFFPTR_SZ("/test1")) ) {
+			path_test1(_conn);
+			return;
+		}
 		//
 		// Prepare variables for templater:
+		// Dmap vars will carry this structure:
 		//
 		// { "data" : [
-		//                { "User Agent" : "<user's user agent>" },
-		//				  { "uri" : "<URI>" },
+		//                { 	"name"  : "User Agent",
+		//						"value" : "<user's user agent>" },
+		//                {     "name"  : "uri",
+		// 	                    "value" : "<HTTP URI>" },
+		//                {     "name"  : "Host",
+		// 	                    "value" : "<Host>" },
 		//            ] }
 		//
 		typedef fir::structures::Dmap Dmap;
@@ -70,57 +77,53 @@ public:
 		v["name"] = "Host";
 		v["value"] = headers.m_host;
 		vec.push_back(v);
+
 		//
 		// Render HTML page
 		//
 		flatbuff_->clear();
-		resources_->getTemplater().get_template("index.html").perform(*flatbuff_, vars);
+		base_class::resources_->getTemplater().get_template("index.html").perform(*flatbuff_, vars);
 
 		std::cout << "response size: " << flatbuff_->size() << "\n";
 
 		//
 		// set response
 		//
-		_conn.m_headers_out.m_response_code = 200;
-		_conn.m_headers_out.m_content_type = fir::net::http::HttpHeaders::ContentType::text_html;
+		_conn.get_headers_out().m_response_code = 200;
+		_conn.get_headers_out().m_content_type = fir::net::http::HttpHeaders::ContentType::text_html;
 		_conn.set_body(flatbuff_->data(), flatbuff_->size());
 	}
 
 
-	// Called on WebSocket message arrived
-	void data(fir::net::ConnectionWebSocket<Responder> &_conn)
+	void path_test1(fir::net::ConnectionHTTP<T_RESOURCES, Responder> &_conn)
 	{
-		// EMPTY
-	}
+		LOG_PURE("state " << (int)state_);
 
-	void data(fir::net::ConnectionBin<Responder> &_conn)
-	{
-		// EMPTY
-	}
+		switch (state_)
+		{
+		default:
+		case State::WAITING:
+			break;
 
-	// Called by ConnectionHTTP when HTTP upgrade happened (HTTP -> WeSocket)
-	// When this method called:
-	// 1. HTTP response "HTTP/1.1 101 Switching Protocols" JUST SENT to user (written to a socket)
-	// 2. ConnectionWebSocket object is created
-	// This method might be used for initialization websocket session.
-	void upgrade(fir::net::ConnectionHTTP<T_RESOURCES, Responder> &_conn_http, fir::net::ConnectionWebSocket<Responder> &_conn_ws)
-	{
-		// EMPTY
-	}
+		case State::START:
+		{
+			state_ = State::WAITING;
+			auto conn = base_class::newConnectionHTTP(this);
+			conn->get_headers_out().m_host = BUFFPTR_SZ("www.ya.ru");
+			conn->get_headers_out().m_uri = BUFFPTR_SZ("/test");
+			conn->get_headers_out().m_method = fir::net::http::HttpHeaders::Method::GET;
+			conn->get_headers_out().m_version = fir::net::http::HttpHeaders::Version::HTTP_1_1;
+
+			fir::net::Addr addr(IPADDR_TO_UINT32(213,180,193,3), 80);
+			conn->m_remote_addr = addr;
+		}
+		break;
+
+		}
 
 
-	void close(fir::net::ConnectionHTTP<T_RESOURCES, Responder> &_conn)
-	{
-		std::cout << "HTTP connection closed\n";
-	}
 
-	void close(fir::net::ConnectionBin<Responder> &_conn)
-	{
-		// EMPTY
-	}
-
-	void close(fir::net::ConnectionWebSocket<Responder> &_conn)
-	{
-		// EMPTY
+//		typename T_RESOURCES::connection_http *conn = m_resources->newConnectionHTTP(this);
+//		conn->m_remote_addr = a;
 	}
 };

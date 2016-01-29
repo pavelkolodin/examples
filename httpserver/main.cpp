@@ -7,7 +7,7 @@
 
 #include <signal.h>
 #include <fir/net/tcp_server_epoll.h>
-#include <fir/net/http/server_resources.h>
+#include <fir/net/server_resources.h>
 #include <fir/logger/logger.h>
 #include "responder.h"
 
@@ -21,7 +21,7 @@ int main(int _argc, char **_argv)
 
 	signal(SIGPIPE, SIG_IGN);
 
-	typedef fir::net::http::ServerResources<int, Responder> SR;
+	typedef fir::net::ServerResources<int, Responder> SR;
 	SR resources(_argv[3], _argv[3]);
     fir::net::TCPServerEpoll<SR> server( resources );
 
